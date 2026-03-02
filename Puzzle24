@@ -1,0 +1,276 @@
+import java.util.*;
+
+public class Puzzle24IDA {
+
+    private static final int SIZE = 5;
+
+    private static final int[] GOAL = {
+            1,2,3,4,5,
+            6,7,8,9,10,
+            11,12,13,14,15,
+            16,17,18,19,20,
+            21,22,23,24,0
+    };
+
+    private static int nodesExpanded = 0;
+    private static long startTime;
+
+    public enum HeuristicType {
+        MANHATTAN,
+        LINEAR_CONFLICT
+    }
+
+    private static HeuristicType heuristicType = HeuristicType.LINEAR_CONFLICT;
+
+    public static void main(String[] args) {
+
+        Scanner sc = new Scanner(System.in);
+
+        System.out.println("Seleccione heurística:");
+        System.out.println("1 - Manhattan");
+        System.out.println("2 - Conflicto Lineal");
+        int option = sc.nextInt();
+
+        if(option == 1)
+            heuristicType = HeuristicType.MANHATTAN;
+        else
+            heuristicType = HeuristicType.LINEAR_CONFLICT;
+
+        int[] initial = generateRandomSolvable();
+
+        System.out.println("\nEstado inicial:");
+        printBoard(initial);
+
+        startTime = System.currentTimeMillis();
+
+        List<String> solution = idaStar(initial);
+
+        long endTime = System.currentTimeMillis();
+
+        if(solution != null) {
+            System.out.println("\nSolución encontrada!");
+            System.out.println("Longitud solución: " + solution.size());
+            System.out.println("Nodos expandidos: " + nodesExpanded);
+            System.out.println("Tiempo (ms): " + (endTime - startTime));
+            System.out.println("Secuencia: " + solution);
+        } else {
+            System.out.println("No se encontró solución.");
+        }
+
+        sc.close();
+    }
+
+    private static List<String> idaStar(int[] start) {
+
+        int threshold = heuristic(start);
+
+        while(true) {
+
+            Set<String> visited = new HashSet<>();
+            SearchResult result = search(start, 0, threshold, new ArrayList<>(), visited);
+
+            if(result.found)
+                return result.path;
+
+            if(result.minCost == Integer.MAX_VALUE)
+                return null;
+
+            threshold = result.minCost;
+        }
+    }
+
+    private static class SearchResult {
+        boolean found;
+        int minCost;
+        List<String> path;
+
+        SearchResult(boolean found, int minCost, List<String> path) {
+            this.found = found;
+            this.minCost = minCost;
+            this.path = path;
+        }
+    }
+
+    private static SearchResult search(int[] state, int g, int threshold,
+                                       List<String> path, Set<String> visited) {
+
+        int f = g + heuristic(state);
+
+        if(f > threshold)
+            return new SearchResult(false, f, null);
+
+        if(Arrays.equals(state, GOAL))
+            return new SearchResult(true, f, new ArrayList<>(path));
+
+        int min = Integer.MAX_VALUE;
+        nodesExpanded++;
+
+        visited.add(Arrays.toString(state));
+
+        for(Move move : Move.values()) {
+
+            int[] next = move.apply(state);
+            if(next == null)
+                continue;
+
+            String key = Arrays.toString(next);
+            if(visited.contains(key))
+                continue;
+
+            path.add(move.name());
+
+            SearchResult result = search(next, g+1, threshold, path, visited);
+
+            if(result.found)
+                return result;
+
+            if(result.minCost < min)
+                min = result.minCost;
+
+            path.remove(path.size()-1);
+        }
+
+        visited.remove(Arrays.toString(state));
+        return new SearchResult(false, min, null);
+    }
+
+    private static int heuristic(int[] state) {
+        if(heuristicType == HeuristicType.MANHATTAN)
+            return manhattan(state);
+        else
+            return linearConflict(state);
+    }
+
+    private static int manhattan(int[] state) {
+
+        int dist = 0;
+
+        for(int i = 0; i < state.length; i++) {
+
+            int value = state[i];
+            if(value == 0) continue;
+
+            int targetRow = (value - 1) / SIZE;
+            int targetCol = (value - 1) % SIZE;
+
+            int row = i / SIZE;
+            int col = i % SIZE;
+
+            dist += Math.abs(row - targetRow) + Math.abs(col - targetCol);
+        }
+
+        return dist;
+    }
+
+    private static int linearConflict(int[] state) {
+
+        int man = manhattan(state);
+        int conflict = 0;
+
+        for(int row = 0; row < SIZE; row++) {
+
+            for(int col1 = 0; col1 < SIZE; col1++) {
+
+                int i = row * SIZE + col1;
+                int tile1 = state[i];
+                if(tile1 == 0) continue;
+
+                int goalRow1 = (tile1 - 1) / SIZE;
+
+                if(goalRow1 == row) {
+
+                    for(int col2 = col1 + 1; col2 < SIZE; col2++) {
+
+                        int j = row * SIZE + col2;
+                        int tile2 = state[j];
+                        if(tile2 == 0) continue;
+
+                        int goalRow2 = (tile2 - 1) / SIZE;
+
+                        if(goalRow2 == row && tile1 > tile2)
+                            conflict += 2;
+                    }
+                }
+            }
+        }
+
+        return man + conflict;
+    }
+
+    private enum Move {
+        UP, DOWN, LEFT, RIGHT;
+
+        int[] apply(int[] state) {
+
+            int zeroIndex = findZero(state);
+            int row = zeroIndex / SIZE;
+            int col = zeroIndex % SIZE;
+
+            int newRow = row;
+            int newCol = col;
+
+            switch(this) {
+                case UP: newRow--; break;
+                case DOWN: newRow++; break;
+                case LEFT: newCol--; break;
+                case RIGHT: newCol++; break;
+            }
+
+            if(newRow < 0 || newRow >= SIZE || newCol < 0 || newCol >= SIZE)
+                return null;
+
+            int[] newState = state.clone();
+            int swapIndex = newRow * SIZE + newCol;
+
+            newState[zeroIndex] = newState[swapIndex];
+            newState[swapIndex] = 0;
+
+            return newState;
+        }
+    }
+
+    private static int[] generateRandomSolvable() {
+
+        List<Integer> numbers = new ArrayList<>();
+        for(int i = 0; i < 25; i++)
+            numbers.add(i);
+
+        int[] puzzle;
+
+        do {
+            Collections.shuffle(numbers);
+            puzzle = numbers.stream().mapToInt(i -> i).toArray();
+        } while(!isSolvable(puzzle));
+
+        return puzzle;
+    }
+
+    private static boolean isSolvable(int[] puzzle) {
+
+        int inversions = 0;
+
+        for(int i = 0; i < puzzle.length; i++) {
+            for(int j = i + 1; j < puzzle.length; j++) {
+                if(puzzle[i] != 0 && puzzle[j] != 0 && puzzle[i] > puzzle[j])
+                    inversions++;
+            }
+        }
+
+        return inversions % 2 == 0;
+    }
+
+    private static int findZero(int[] state) {
+        for(int i = 0; i < state.length; i++)
+            if(state[i] == 0)
+                return i;
+        return -1;
+    }
+
+    private static void printBoard(int[] state) {
+        for(int i = 0; i < state.length; i++) {
+            System.out.printf("%3d ", state[i]);
+            if((i+1) % SIZE == 0)
+                System.out.println();
+        }
+    }
+}
